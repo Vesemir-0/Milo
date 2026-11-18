@@ -1,221 +1,81 @@
-//
-//  MenuBarView.swift
-//  AIScheduleAssistant
-//
-//  Created by Claude on 2026/3/9.
-//
-
 import SwiftUI
 
+private struct MenuSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
+}
 struct MenuBarView: View {
     weak var appDelegate: AppDelegate?
-    @StateObject private var viewModel = ContentProcessViewModel()
-    @State private var showSettings = false
-    @State private var showTextInput = false
-
+    @ObservedObject var queue: RecognitionQueue
+    @ObservedObject var navigation: MenuNavigation
+    let presentationID: UUID
+    @ObservedObject private var config = ConfigService.shared
+    @ObservedObject private var history = HistoryStore.shared
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header with branding
-            HStack(spacing: 12) {
-                Image(systemName: "calendar.badge.plus")
-                    .font(.system(size: 24))
-                    .foregroundColor(DesignSystem.Colors.primaryCoral)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("AI 日程助手")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(DesignSystem.Colors.textPrimary)
-                    Text("让水豚帮你整理日程")
-                        .font(.system(size: 11))
-                        .foregroundColor(DesignSystem.Colors.textSecondary)
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                if navigation.composing {
+                    Button { navigation.composing = false } label: { Label("返回", systemImage: "chevron.left").font(.system(size: 11)) }.buttonStyle(MiloHoverStyle())
+                    Spacer()
+                    Text("文本输入").font(.system(size: 12, weight: .medium))
+                    Spacer()
+                    Button { appDelegate?.beginScreenshot() } label: { Image(systemName: "viewfinder") }.buttonStyle(MiloHoverStyle()).help("直接截图").disabled(queue.isCapturing || !config.settings.enableScreenshotCapture)
+                } else {
+                    Image("MiloScribe").resizable().scaledToFit().frame(width: 38, height: 40)
+                    VStack(alignment: .leading, spacing: 4) { Text(miloWindowTitle).font(.system(size: 12, weight: .semibold)); Text("把零散信息，妥帖地记下来。").font(.system(size: 10)).foregroundStyle(DesignSystem.Colors.textSecondary) }
+                    Spacer(minLength: 0)
                 }
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 16)
-            .background(
-                LinearGradient(
-                    colors: [
-                        DesignSystem.Colors.backgroundWarm,
-                        DesignSystem.Colors.backgroundWarm.opacity(0.8)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-
-            DividerCapybara()
-                .padding(.vertical, 8)
-
-            VStack(spacing: 8) {
-                MenuButton(
-                    icon: "camera.fill",
-                    title: "截图获取",
-                    subtitle: "轻松捕捉屏幕信息",
-                    iconColor: DesignSystem.Colors.accentWater
-                ) {
-                    // 关闭菜单以避免遮挡截图
-                    appDelegate?.closePopover()
-                    // 延迟一小段时间确保菜单已关闭
-                    Task {
-                        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1秒
-                        await viewModel.captureScreenshot()
-                    }
-                }
-
-                MenuButton(
-                    icon: "text.cursor",
-                    title: "文本输入",
-                    subtitle: "粘贴或输入日程文本",
-                    iconColor: DesignSystem.Colors.primaryCoral
-                ) {
-                    showTextInput = true
-                }
-            }
-            .padding(.horizontal, 12)
-
-            DividerCapybara()
-                .padding(.vertical, 8)
-
-            VStack(spacing: 8) {
-                MenuButton(
-                    icon: "gearshape.fill",
-                    title: "设置",
-                    iconColor: DesignSystem.Colors.textSecondary
-                ) {
-                    appDelegate?.showSettingsWindow()
-                }
-
-                MenuButton(
-                    icon: "info.circle.fill",
-                    title: "关于",
-                    iconColor: DesignSystem.Colors.textSecondary
-                ) {
-                    showAboutDialog()
-                }
-            }
-            .padding(.horizontal, 12)
-
-            DividerCapybara()
-                .padding(.vertical, 8)
-
-            MenuButton(
-                icon: "rectangle.portrait.and.arrow.right",
-                title: "退出",
-                iconColor: DesignSystem.Colors.textTertiary
-            ) {
-                NSApplication.shared.terminate(nil)
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
-        }
-        .frame(width: 280)
-        .background(DesignSystem.Colors.backgroundWarm)
-        .sheet(isPresented: $showTextInput) {
-            TextInputWindow { text in
-                Task {
-                    await viewModel.captureTextFromInput(text)
-                }
-            }
-        }
-        .onChange(of: viewModel.state) {
-            handleStateChange(viewModel.state)
-        }
-    }
-
-    private func handleStateChange(_ state: ProcessingState) {
-        switch state {
-        case .completed(let events):
-            appDelegate?.showPreviewWindow(events: events, viewModel: viewModel)
-        case .error(let error):
-            showErrorAlert(error)
-        default:
-            break
-        }
-    }
-
-    private func handleProcessingResult() async {
-        // This method is no longer needed but kept for compatibility
-    }
-
-    private func showErrorAlert(_ error: Error) {
-        let alert = NSAlert()
-        alert.messageText = "错误"
-        alert.informativeText = error.localizedDescription
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "确定")
-        alert.runModal()
-    }
-
-    private func showAboutDialog() {
-        let alert = NSAlert()
-        alert.messageText = "AI Schedule Assistant"
-        alert.informativeText = """
-        版本 1.0
-
-        通过 AI 智能识别截图和文本中的日程信息，
-        自动添加到系统日历和待办清单。
-
-        © 2026 开源项目
-        """
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "确定")
-        alert.runModal()
-    }
-}
-
-struct MenuButton: View {
-    let icon: String
-    let title: String
-    var subtitle: String? = nil
-    var iconColor: Color = DesignSystem.Colors.primaryCoral
-    let action: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundColor(iconColor)
-                    .frame(width: 28)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(DesignSystem.Colors.textPrimary)
-
-                    if let subtitle = subtitle {
-                        Text(subtitle)
-                            .font(.system(size: 11))
-                            .foregroundColor(DesignSystem.Colors.textSecondary)
-                    }
-                }
-
-                Spacer()
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .padding(.vertical, subtitle != nil ? 10 : 8)
-        .padding(.horizontal, 12)
-        .background(
-            RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.medium)
-                .fill(isHovered ? DesignSystem.Colors.primaryCoral.opacity(0.1) : Color.clear)
-        )
-        .animation(.easeInOut(duration: 0.2), value: isHovered)
-        .onHover { hovering in
-            isHovered = hovering
-            if hovering {
-                NSCursor.pointingHand.push()
+            }.padding(.horizontal, 16).frame(height: navigation.composing ? 50 : 67)
+            Divider().padding(.horizontal, 12).opacity(0.4)
+            if navigation.composing {
+                InlineTextComposer(navigation: navigation, queue: queue, settings: { appDelegate?.showSettingsWindow() })
             } else {
-                NSCursor.pop()
+                VStack(spacing: 3) {
+                    menuAction("截图获取", subtitle: "直接圈选屏幕，Esc 取消", icon: "viewfinder") { appDelegate?.beginScreenshot() }.disabled(queue.isCapturing || !config.settings.enableScreenshotCapture)
+                    menuAction("文本输入", subtitle: "粘贴消息，或直接写下来", icon: "text.alignleft") { navigation.composing = true }.disabled(!config.settings.enableTextCapture)
+                }.padding(.horizontal, 10).padding(.vertical, 7)
+                Divider().padding(.horizontal, 12).opacity(0.4)
+                HStack { Text("本次使用").font(.system(size: 10)); Spacer(); MiloModelPicker().frame(maxWidth: 200) }.foregroundStyle(DesignSystem.Colors.textSecondary).padding(.horizontal, 18).padding(.vertical, 10)
             }
-        }
-    }
-}
+            if queue.isWorking {
+                Button { appDelegate?.showProcessingWindow() } label: {
+                    HStack(spacing: 9) {
+                        ProgressView().controlSize(.small).allowsHitTesting(false).accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("同时整理 \(queue.activeWorkers.count) 项 · 等待 \(queue.waiting.count) 项")
+                            Text("最多 \(queue.concurrencyLimit) 项并发，可以继续提交").font(.system(size: 10)).foregroundStyle(DesignSystem.Colors.textSecondary)
+                        }
+                        Spacer(); Image(systemName: "chevron.right").font(.system(size: 9))
+                    }.font(.system(size: 11)).padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                }.buttonStyle(MiloHoverStyle()).accessibilityElement(children: .ignore).accessibilityLabel("查看识别进度，同时整理 \(queue.activeWorkers.count) 项，等待 \(queue.waiting.count) 项").padding(.horizontal, 10).padding(.bottom, 7)
+            } else if let record = queue.latestWorker?.record, !record.drafts.isEmpty {
+                Button { appDelegate?.openRecord(record) } label: { HStack { Image(systemName: "checkmark"); Text("\(record.drafts.count) 项安排已整理好"); Spacer(); Image(systemName: "chevron.right").font(.system(size: 9)) }.font(.system(size: 11)).padding(10).frame(maxWidth: .infinity, minHeight: 44) }.buttonStyle(MiloHoverStyle()).padding(.horizontal, 10).padding(.bottom, 7)
+            }
+            Divider().padding(.horizontal, 12).opacity(0.4)
+            VStack(spacing: 1) {
+                HStack(spacing: 4) {
+                    Button { appDelegate?.showHistoryWindow() } label: { HStack { Label("历史记录", systemImage: "clock.arrow.circlepath"); Spacer(); Text("\(history.records.count)") }.frame(maxWidth: .infinity).padding(.horizontal, 7).padding(.vertical, 4) }
+                    Button { appDelegate?.showSettingsWindow() } label: { Label("设置", systemImage: "slider.horizontal.3").padding(.horizontal, 7).padding(.vertical, 4) }
+                }.font(.system(size: 11))
+                HStack {
+                    Button("关于 Milo") { appDelegate?.showAboutWindow() }
+                    Spacer(); Button("退出  ⌘ Q") { appDelegate?.quit() }
+                }.font(.system(size: 10))
+            }.buttonStyle(MiloHoverStyle()).foregroundStyle(DesignSystem.Colors.textSecondary).padding(.horizontal, 12).padding(.vertical, 7)
+            if let warning = queue.notice ?? config.storageWarning { Text(warning).font(.system(size: 10)).foregroundStyle(DesignSystem.Colors.error).padding(10) }
+        }.frame(width: 352).fixedSize(horizontal: false, vertical: true)
+            .background(MiloGlassBackground(menu: true)).foregroundStyle(DesignSystem.Colors.textPrimary)
 
-#Preview {
-    MenuBarView()
+            .background(GeometryReader { proxy in Color.clear.preference(key: MenuSizeKey.self, value: proxy.size) })
+            .onPreferenceChange(MenuSizeKey.self) { size in appDelegate?.resizePopover(size, session: presentationID) }
+    }
+    private func menuAction(_ title: String, subtitle: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 13) {
+                Image(systemName: icon).font(.system(size: 19, weight: .light)).foregroundStyle(DesignSystem.Colors.primary).frame(width: 24)
+                VStack(alignment: .leading, spacing: 5) { Text(title).font(.system(size: 13, weight: .medium)); Text(subtitle).font(.system(size: 10)).foregroundStyle(DesignSystem.Colors.textSecondary) }
+                Spacer(); Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(DesignSystem.Colors.textSecondary)
+            }.padding(.horizontal, 10).padding(.vertical, 11).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+        }.buttonStyle(MiloHoverStyle())
+    }
 }

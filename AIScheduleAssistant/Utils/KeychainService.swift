@@ -1,87 +1,46 @@
-//
-//  KeychainService.swift
-//  AIScheduleAssistant
-//
-//  Created by Claude on 2026/3/9.
-//
-
 import Foundation
 import Security
 
-enum KeychainError: Error {
-    case itemNotFound
-    case duplicateItem
-    case invalidData
-    case unexpectedStatus(OSStatus)
+protocol SecretStoring {
+    func saveAPIKey(_ value: String, for account: String) throws
+    func getAPIKey(for account: String) throws -> String
+    func deleteAPIKey(for account: String) throws
 }
+enum KeychainError: Error { case itemNotFound, invalidData, unexpectedStatus(OSStatus) }
 
-class KeychainService {
+final class KeychainService: SecretStoring {
     private let service = "com.aischeduleassistant.v2"
-
-    // Save API key to Keychain
+    private func query(_ account: String) -> [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
+    }
     func saveAPIKey(_ apiKey: String, for account: String = "default") throws {
-        guard let data = apiKey.data(using: .utf8) else {
-            throw KeychainError.invalidData
-        }
-
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: data
-        ]
-
-        // Try to delete existing item first
-        SecItemDelete(query as CFDictionary)
-
-        // Add new item
-        let status = SecItemAdd(query as CFDictionary, nil)
-
-        guard status == errSecSuccess else {
-            throw KeychainError.unexpectedStatus(status)
-        }
+        guard let data = apiKey.data(using: .utf8) else { throw KeychainError.invalidData }
+        let q = query(account)
+        let status = SecItemUpdate(q as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound {
+            var insert = q; insert[kSecValueData as String] = data
+            let add = SecItemAdd(insert as CFDictionary, nil)
+            guard add == errSecSuccess else { throw KeychainError.unexpectedStatus(add) }
+        } else if status != errSecSuccess { throw KeychainError.unexpectedStatus(status) }
     }
-
-    // Retrieve API key from Keychain
     func getAPIKey(for account: String = "default") throws -> String {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        guard status == errSecSuccess else {
-            if status == errSecItemNotFound {
-                throw KeychainError.itemNotFound
-            }
-            throw KeychainError.unexpectedStatus(status)
-        }
-
-        guard let data = result as? Data,
-              let apiKey = String(data: data, encoding: .utf8) else {
-            throw KeychainError.invalidData
-        }
-
-        return apiKey
+        var q = query(account)
+        q[kSecReturnData as String] = true; q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(q as CFDictionary, &result)
+        if status == errSecItemNotFound { throw KeychainError.itemNotFound }
+        guard status == errSecSuccess else { throw KeychainError.unexpectedStatus(status) }
+        guard let data = result as? Data, let value = String(data: data, encoding: .utf8) else { throw KeychainError.invalidData }
+        return value
     }
-
-    // Delete API key from Keychain
     func deleteAPIKey(for account: String = "default") throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-
-        let status = SecItemDelete(query as CFDictionary)
-
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw KeychainError.unexpectedStatus(status)
-        }
+        let status = SecItemDelete(query(account) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw KeychainError.unexpectedStatus(status) }
     }
+}
+final class MemorySecretStore: SecretStoring {
+    var values: [String: String] = [:]
+    func saveAPIKey(_ value: String, for account: String) throws { values[account] = value }
+    func getAPIKey(for account: String) throws -> String { guard let v = values[account] else { throw KeychainError.itemNotFound }; return v }
+    func deleteAPIKey(for account: String) throws { values.removeValue(forKey: account) }
 }

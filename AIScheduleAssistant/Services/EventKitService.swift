@@ -1,354 +1,65 @@
-//
-//  EventKitService.swift
-//  AIScheduleAssistant
-//
-//  Created by Claude on 2026/3/9.
-//
-
 import Foundation
 import EventKit
 
-enum EventKitError: LocalizedError {
-    case permissionDenied
-    case calendarNotFound
-    case reminderListNotFound
-    case eventCreationFailed
-    case reminderCreationFailed
-
-    var errorDescription: String? {
-        switch self {
-        case .permissionDenied:
-            return "日历或提醒事项权限被拒绝"
-        case .calendarNotFound:
-            return "未找到指定的日历"
-        case .reminderListNotFound:
-            return "未找到指定的待办清单"
-        case .eventCreationFailed:
-            return "创建日历事件失败"
-        case .reminderCreationFailed:
-            return "创建待办事项失败"
-        }
-    }
-}
-
-class EventKitService {
+@MainActor final class EventKitService: EventWriting {
     static let shared = EventKitService()
-
-    private let eventStore = EKEventStore()
-
-    private init() {}
-
-    // MARK: - Main API
-
-    func createEvent(_ parsed: ParsedEvent) async throws -> (EKEvent?, EKReminder?) {
-        // Check permissions
-        let calendarStatus = EKEventStore.authorizationStatus(for: .event)
-        let reminderStatus = EKEventStore.authorizationStatus(for: .reminder)
-
-        // Get save target from settings
-        let saveTarget = ConfigService.shared.settings.saveTarget
-
-        // Validate permissions based on save target
-        if saveTarget == .both || saveTarget == .calendarOnly {
-            guard calendarStatus == .fullAccess || calendarStatus == .writeOnly else {
-                throw EventKitError.permissionDenied
-            }
-        }
-
-        if saveTarget == .both || saveTarget == .reminderOnly {
-            guard reminderStatus == .fullAccess else {
-                throw EventKitError.permissionDenied
-            }
-        }
-
-        // Create calendar event if needed
-        var event: EKEvent? = nil
-        if saveTarget == .both || saveTarget == .calendarOnly {
-            event = try await createCalendarEvent(parsed)
-        }
-
-        // Create reminder if needed
-        var reminder: EKReminder? = nil
-        if saveTarget == .both || saveTarget == .reminderOnly {
-            reminder = try await createReminder(parsed, isStartReminder: true)
-        }
-
-        return (event, reminder)
-    }
-
-    // MARK: - Calendar Event Creation
-
-    private func createCalendarEvent(_ parsed: ParsedEvent) async throws -> EKEvent {
+    let eventStore = EKEventStore()
+    func getCalendars() -> [EKCalendar] { if RuntimeMode.isPreview { return [] }; return eventStore.calendars(for: .event).filter(\.allowsContentModifications) }
+    func getReminderLists() -> [EKCalendar] { if RuntimeMode.isPreview { return [] }; return eventStore.calendars(for: .reminder).filter(\.allowsContentModifications) }
+    func saveCalendar(_ parsed: ParsedEvent, calendarID: String?) async throws -> String {
+        try await ensurePermission(.event)
+        guard let start = parsed.startDate else { throw FailureInfo.configuration("这项日程还没有日期", suggestion: "先在纸条上设置开始日期，再添加到日历。") }
         let event = EKEvent(eventStore: eventStore)
-
-        event.title = parsed.title
-        event.startDate = parsed.startDate
-        event.endDate = parsed.endDate ?? parsed.startDate.addingTimeInterval(3600) // Default 1 hour
-        event.isAllDay = parsed.isAllDay
-
-        // Set notes
-        let description = parsed.description ?? ""
-        event.notes = description.isEmpty ? nil : description
-
-        // Select or create calendar
-        event.calendar = try selectOrCreateCalendar(named: parsed.suggestedCalendar)
-
-        // Save event
-        do {
-            try eventStore.save(event, span: .thisEvent)
-            return event
-        } catch {
-            throw EventKitError.eventCreationFailed
-        }
+        event.title = parsed.title; event.startDate = start
+        event.endDate = parsed.endDate ?? (parsed.isAllDay ? Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: start))! : start.addingTimeInterval(3600))
+        event.isAllDay = parsed.isAllDay; event.notes = parsed.readableBody
+        event.location = parsed.location; event.url = parsed.url.flatMap(URL.init(string:))
+        event.calendar = try destination(type: .event, id: calendarID, suggested: parsed.suggestedCalendar)
+        do { try eventStore.save(event, span: .thisEvent); return event.calendarItemIdentifier }
+        catch { throw writeFailure("日历", error) }
     }
-
-    // MARK: - Reminder Creation
-
-    private func createReminder(_ parsed: ParsedEvent, isStartReminder: Bool) async throws -> EKReminder {
-        // Check if this is a multi-day duration event (including all-day events)
-        let isMultiDay = parsed.endDate != nil &&
-                        !Calendar.current.isDate(parsed.startDate, inSameDayAs: parsed.endDate!)
-
-        if isMultiDay {
-            // Create start reminder for multi-day events
-            let startReminder = try await createSingleReminder(
-                parsed: parsed,
-                dueDate: parsed.startDate,
-                titleSuffix: "（开始）",
-                isStart: true
-            )
-
-            // Create end reminder for multi-day events
-            _ = try await createSingleReminder(
-                parsed: parsed,
-                dueDate: parsed.endDate!,
-                titleSuffix: "（结束）",
-                isStart: false
-            )
-
-            return startReminder
-        } else {
-            // Single reminder for same-day events
-            return try await createSingleReminder(
-                parsed: parsed,
-                dueDate: parsed.startDate,  // Use startDate instead of dueDate
-                titleSuffix: nil,
-                isStart: true
-            )
-        }
-    }
-
-    private func createSingleReminder(
-        parsed: ParsedEvent,
-        dueDate: Date,
-        titleSuffix: String?,
-        isStart: Bool
-    ) async throws -> EKReminder {
+    func saveReminder(_ parsed: ParsedEvent, due: Date?, suffix: String?, listID: String?) async throws -> String {
+        try await ensurePermission(.reminder)
         let reminder = EKReminder(eventStore: eventStore)
-
-        // Format title
-        var title = parsed.title
-        if let suffix = titleSuffix {
-            title += suffix
-        }
-
-        // Add time range to title if it's not an all-day event and no suffix
-        if !parsed.isAllDay && titleSuffix == nil {
-            let timeFormatter = DateFormatter()
-            timeFormatter.dateFormat = "HH:mm"
-
-            let startTime = timeFormatter.string(from: parsed.startDate)
-            let endTime = timeFormatter.string(from: parsed.endDate ?? parsed.dueDate)
-
-            title = "\(title) [\(startTime)-\(endTime)]"
-        }
-
-        reminder.title = title
-
-        // Set due date
-        let calendar = Calendar.current
-        reminder.dueDateComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: dueDate)
-
-        // Set priority (EKReminder uses 0-9, where 0 is none, 1-4 is high, 5 is medium, 6-9 is low)
-        reminder.priority = parsed.priority
-
-        // Set notes with time information
-        let description = parsed.description ?? ""
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .medium
-        dateFormatter.timeStyle = .short
-        dateFormatter.locale = Locale(identifier: "zh_CN")
-
-        let startDateStr = dateFormatter.string(from: parsed.startDate)
-        let endDateStr = parsed.endDate.map { dateFormatter.string(from: $0) } ?? ""
-
-        var notesContent = "开始时间: \(startDateStr)\n"
-        if !endDateStr.isEmpty {
-            notesContent += "结束时间: \(endDateStr)\n"
-        }
-        if !description.isEmpty {
-            notesContent += "\n\(description)"
-        }
-
-        reminder.notes = notesContent
-
-        // Select or create reminder list
-        reminder.calendar = try selectOrCreateReminderList(named: parsed.suggestedReminderList)
-
-        // Save reminder
-        do {
-            try eventStore.save(reminder, commit: true)
-            return reminder
-        } catch {
-            throw EventKitError.reminderCreationFailed
-        }
+        reminder.title = parsed.title + (suffix ?? "")
+        if let due { reminder.dueDateComponents = Calendar.current.dateComponents(parsed.isAllDay ? [.year, .month, .day] : [.year, .month, .day, .hour, .minute], from: due) }
+        reminder.priority = min(9, max(0, parsed.priority))
+        reminder.notes = [parsed.location.map { "地点：" + $0 }, parsed.readableBody].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n\n")
+        reminder.url = parsed.url.flatMap(URL.init(string:))
+        reminder.calendar = try destination(type: .reminder, id: listID, suggested: parsed.suggestedReminderList)
+        do { try eventStore.save(reminder, commit: true); return reminder.calendarItemIdentifier }
+        catch { throw writeFailure("待办清单", error) }
     }
-
-    // MARK: - Calendar Selection/Creation
-
-    private func selectOrCreateCalendar(named name: String) throws -> EKCalendar {
-        let calendars = eventStore.calendars(for: .event)
-
-        // 1. Exact match
-        if let exactMatch = calendars.first(where: { $0.title == name }) {
-            return exactMatch
+    private func ensurePermission(_ type: EKEntityType) async throws {
+        guard !RuntimeMode.isPreview else { throw FailureInfo.configuration("界面检查模式不会写入系统内容", suggestion: "退出检查模式后使用正式入口。") }
+        let status = EKEventStore.authorizationStatus(for: type)
+        if status == .fullAccess || (type == .event && status == .writeOnly) { return }
+        if status == .notDetermined {
+            let granted = try await (type == .event ? eventStore.requestFullAccessToEvents() : eventStore.requestFullAccessToReminders())
+            if granted { return }
         }
-
-        // 2. Fuzzy match (case-insensitive, contains)
-        let lowercaseName = name.lowercased()
-        if let fuzzyMatch = calendars.first(where: { $0.title.lowercased().contains(lowercaseName) || lowercaseName.contains($0.title.lowercased()) }) {
-            return fuzzyMatch
-        }
-
-        // 3. Create new calendar
-        return try createNewCalendar(named: name)
+        throw FailureInfo(kind: .permission, title: type == .event ? "日历权限还没有打开" : "提醒事项权限还没有打开", message: "这一目标尚未写入，其他成功部分会保留。", suggestion: "前往系统设置授权后，只重试尚未完成的部分。")
     }
-
-    private func createNewCalendar(named name: String) throws -> EKCalendar {
-        let newCalendar = EKCalendar(for: .event, eventStore: eventStore)
-        newCalendar.title = name
-
-        // Find the best source (iCloud if available, otherwise local)
-        if let iCloudSource = eventStore.sources.first(where: { $0.sourceType == .calDAV && $0.title == "iCloud" }) {
-            newCalendar.source = iCloudSource
-        } else if let localSource = eventStore.sources.first(where: { $0.sourceType == .local }) {
-            newCalendar.source = localSource
-        } else if let defaultSource = eventStore.defaultCalendarForNewEvents?.source {
-            newCalendar.source = defaultSource
-        } else {
-            throw EventKitError.calendarNotFound
+    private func destination(type: EKEntityType, id: String?, suggested: String) throws -> EKCalendar {
+        let options = type == .event ? getCalendars() : getReminderLists()
+        if let id {
+            guard let exact = options.first(where: { $0.calendarIdentifier == id }) else { throw FailureInfo(kind: .writing, title: "保存位置已经变化", message: "选中的日历或待办清单不存在或不可写入。", suggestion: "在纸条上重新选择保存位置后重试。") }
+            return exact
         }
-
-        do {
-            try eventStore.saveCalendar(newCalendar, commit: true)
-            return newCalendar
-        } catch {
-            throw EventKitError.calendarNotFound
-        }
+        let name = suggested.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let match = options.first(where: { $0.title.caseInsensitiveCompare(name) == .orderedSame }) { return match }
+        if !name.isEmpty, let match = options.first(where: { $0.title.localizedCaseInsensitiveContains(name) || name.localizedCaseInsensitiveContains($0.title) }) { return match }
+        let fallback = type == .event ? eventStore.defaultCalendarForNewEvents : eventStore.defaultCalendarForNewReminders()
+        if name.isEmpty, let fallback, fallback.allowsContentModifications { return fallback }
+        // Preserve the original category-creation path, using writable sources only.
+        let calendar = EKCalendar(for: type, eventStore: eventStore)
+        calendar.title = name.isEmpty ? "Milo" : name
+        calendar.source = fallback?.source ?? eventStore.sources.first { $0.sourceType == .calDAV } ?? eventStore.sources.first { $0.sourceType == .local }
+        guard calendar.source != nil else { throw FailureInfo(kind: .writing, title: "还没有可用的保存位置", message: "系统中没有可用于新建分类的账户。", suggestion: "先在系统日历或提醒事项中设置可写入的账户。") }
+        do { try eventStore.saveCalendar(calendar, commit: true); return calendar }
+        catch { throw writeFailure("目标分类", error) }
     }
-
-    // MARK: - Reminder List Selection/Creation
-
-    private func selectOrCreateReminderList(named name: String) throws -> EKCalendar {
-        let reminderLists = eventStore.calendars(for: .reminder)
-
-        print("📋 Available reminder lists:")
-        for list in reminderLists {
-            print("  - \(list.title) (source: \(list.source?.title ?? "unknown"), type: \(list.source?.sourceType.rawValue ?? -1), canModify: \(list.allowsContentModifications))")
-        }
-
-        // 1. Exact match - but verify the source supports reminders
-        if let exactMatch = reminderLists.first(where: { $0.title == name && canSaveReminders(to: $0) }) {
-            print("✅ Using existing reminder list: \(exactMatch.title)")
-            return exactMatch
-        }
-
-        // 2. Fuzzy match - but verify the source supports reminders
-        let lowercaseName = name.lowercased()
-        if let fuzzyMatch = reminderLists.first(where: {
-            ($0.title.lowercased().contains(lowercaseName) || lowercaseName.contains($0.title.lowercased())) &&
-            canSaveReminders(to: $0)
-        }) {
-            print("✅ Using fuzzy matched reminder list: \(fuzzyMatch.title)")
-            return fuzzyMatch
-        }
-
-        // 3. If no match found, try to use any existing modifiable reminder list
-        if let anyModifiable = reminderLists.first(where: { canSaveReminders(to: $0) }) {
-            print("⚠️ No match for '\(name)', using existing list: \(anyModifiable.title)")
-            return anyModifiable
-        }
-
-        // 4. Create new reminder list
-        print("🆕 Creating new reminder list: \(name)")
-        return try createNewReminderList(named: name)
-    }
-
-    private func canSaveReminders(to calendar: EKCalendar) -> Bool {
-        // Check if the calendar's source allows modifications
-        guard calendar.source != nil else { return false }
-        return calendar.allowsContentModifications
-    }
-
-    private func createNewReminderList(named name: String) throws -> EKCalendar {
-        let newList = EKCalendar(for: .reminder, eventStore: eventStore)
-        newList.title = name
-
-        print("🔍 Available sources:")
-        for source in eventStore.sources {
-            print("  - \(source.title) (type: \(source.sourceType.rawValue))")
-        }
-
-        // Find the best source - prioritize sources that support reminders
-        let sources = eventStore.sources.filter { source in
-            source.sourceType == .calDAV || source.sourceType == .local
-        }
-
-        print("🔍 Filtered sources (calDAV or local): \(sources.count)")
-
-        // Try iCloud first
-        if let iCloudSource = sources.first(where: { $0.sourceType == .calDAV && $0.title.contains("iCloud") }) {
-            print("✅ Using iCloud source: \(iCloudSource.title)")
-            newList.source = iCloudSource
-        }
-        // Then try local
-        else if let localSource = sources.first(where: { $0.sourceType == .local }) {
-            print("✅ Using local source: \(localSource.title)")
-            newList.source = localSource
-        }
-        // Then try default reminder source
-        else if let defaultSource = eventStore.defaultCalendarForNewReminders()?.source {
-            print("✅ Using default reminder source: \(defaultSource.title)")
-            newList.source = defaultSource
-        }
-        // Finally try any available source
-        else if let anySource = sources.first {
-            print("⚠️ Using first available source: \(anySource.title)")
-            newList.source = anySource
-        }
-        else {
-            print("❌ No suitable source found")
-            throw EventKitError.reminderListNotFound
-        }
-
-        do {
-            print("💾 Attempting to save new reminder list...")
-            try eventStore.saveCalendar(newList, commit: true)
-            print("✅ Successfully created reminder list: \(name)")
-            return newList
-        } catch {
-            print("❌ Failed to save calendar: \(error)")
-            throw EventKitError.reminderListNotFound
-        }
-    }
-
-    // MARK: - Helper Methods
-
-    func getCalendars() -> [EKCalendar] {
-        return eventStore.calendars(for: .event)
-    }
-
-    func getReminderLists() -> [EKCalendar] {
-        return eventStore.calendars(for: .reminder)
+    private func writeFailure(_ target: String, _ error: Error) -> FailureInfo {
+        FailureInfo(kind: .writing, title: "\(target)还没有保存成功", message: "\(target)写入失败，编辑结果和其他成功目标仍然保留。", suggestion: "检查权限、账户同步与保存位置后重试。", technical: SecretRedactor.redact(String(describing: error)))
     }
 }

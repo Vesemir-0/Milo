@@ -1,52 +1,53 @@
-//
-//  ParsedEvent.swift
-//  AIScheduleAssistant
-//
-//  Created by Claude on 2026/3/9.
-//
-
 import Foundation
 
-struct ParsedEvent: Codable {
-    let title: String
-    let description: String?
+struct ParsedEvent: Codable, Identifiable, Equatable, Sendable {
+    var id = UUID()
+    var title: String
+    var description: String?
+    var startDate: Date?
+    var endDate: Date?
+    var isAllDay = false
+    var dueDate: Date?
+    var priority = 0
+    var suggestedCalendar = ""
+    var suggestedReminderList = ""
+    var confidence = 1.0
+    var location: String?
+    var url: String?
+    var notes: [String] = []
 
-    // Calendar event information
-    let startDate: Date
-    let endDate: Date?
-    let isAllDay: Bool
+    var readableBody: String {
+        let body = description ?? ""
+        let bullets = notes.filter { !$0.isEmpty }.joined(separator: "\n\n")
+        return [body, bullets].filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+    mutating func setBody(_ value: String) { description = value; notes = [] }
+    var needsTwoReminders: Bool {
+        guard let start = startDate, let end = endDate else { return false }
+        return !Calendar.current.isDate(start, inSameDayAs: end)
+    }
+}
 
-    // Reminder information
-    let dueDate: Date
-    let priority: Int  // 0-9
+struct EventDraft: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var event: ParsedEvent
+    var selected = true
+    var target: SaveTarget
+    var calendarID: String?
+    var reminderListID: String?
+    var savedCalendarID: String?
+    var savedStartReminderID: String?
+    var savedEndReminderID: String?
+    var saveError: String?
 
-    // Categories
-    let suggestedCalendar: String
-    let suggestedReminderList: String
-
-    let confidence: Double
-
-    init(
-        title: String,
-        description: String? = nil,
-        startDate: Date,
-        endDate: Date? = nil,
-        isAllDay: Bool = false,
-        dueDate: Date? = nil,
-        priority: Int = 0,
-        suggestedCalendar: String,
-        suggestedReminderList: String,
-        confidence: Double = 1.0
-    ) {
-        self.title = title
-        self.description = description
-        self.startDate = startDate
-        self.endDate = endDate
-        self.isAllDay = isAllDay
-        self.dueDate = dueDate ?? startDate
-        self.priority = min(max(priority, 0), 9)
-        self.suggestedCalendar = suggestedCalendar
-        self.suggestedReminderList = suggestedReminderList
-        self.confidence = min(max(confidence, 0.0), 1.0)
+    var calendarComplete: Bool { !target.includesCalendar || savedCalendarID != nil }
+    var remindersComplete: Bool { !target.includesReminders || (savedStartReminderID != nil && (!event.needsTwoReminders || savedEndReminderID != nil)) }
+    var isComplete: Bool { calendarComplete && remindersComplete }
+    var hasSavedTargets: Bool { savedCalendarID != nil || savedStartReminderID != nil || savedEndReminderID != nil }
+    var validationMessage: String? {
+        if event.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "请填写标题。" }
+        if target.includesCalendar && !calendarComplete && event.startDate == nil { return "添加到日历前，请设置开始日期。" }
+        if let start = event.startDate, let end = event.endDate, end < start { return "结束时间不能早于开始时间。" }
+        return nil
     }
 }

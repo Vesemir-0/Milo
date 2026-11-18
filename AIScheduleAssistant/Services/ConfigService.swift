@@ -1,119 +1,72 @@
-//
-//  ConfigService.swift
-//  AIScheduleAssistant
-//
-//  Created by Claude on 2026/3/9.
-//
-
 import Foundation
 import Combine
 
-class ConfigService: ObservableObject {
-    static let shared = ConfigService()
+@MainActor final class ConfigService: ObservableObject {
+    static let shared = ConfigService(defaults: RuntimeMode.isPreview ? UserDefaults(suiteName: "Milo.UIPreview")! : .standard,
+                                      keychain: RuntimeMode.isPreview ? MemorySecretStore() : KeychainService())
+    @Published private(set) var settings: AppSettings
+    @Published var storageWarning: String?
+    private let defaults: UserDefaults
+    private let keychain: SecretStoring
+    private let settingsKey = "miloSettings.v1"
 
-    @Published var settings: AppSettings
-
-    private let defaults = UserDefaults.standard
-    private let keychain = KeychainService()
-
-    private let settingsKey = "appSettings"
-
-    private init() {
-        // Load settings from UserDefaults
-        if let data = defaults.data(forKey: settingsKey),
-           let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
-            self.settings = decoded
-
-            // Auto-upgrade old configurations
-            if self.settings.aiConfig.maxTokens < 4000 {
-                print("⚙️ Upgrading maxTokens from \(self.settings.aiConfig.maxTokens) to 4000")
-                self.settings.aiConfig.maxTokens = 4000
-                saveSettings()
+    init(defaults: UserDefaults, keychain: SecretStoring) {
+        self.defaults = defaults; self.keychain = keychain
+        let current = defaults.data(forKey: settingsKey)
+        let legacyData = defaults.data(forKey: "appSettings")
+        let data = current ?? legacyData
+        if let data, let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) { settings = decoded }
+        else {
+            settings = .default
+            if let data { defaults.set(data, forKey: "appSettings.recovery.\(Date().timeIntervalSince1970)"); storageWarning = "旧配置暂时无法读取，已保留副本。请重新检查 API 设置。" }
+        }
+        let needsMigration = current == nil && legacyData != nil
+        let legacy = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["apiProfiles"] == nil && data != nil
+        for index in settings.apiProfiles.indices {
+            let account = legacy ? "default" : settings.apiProfiles[index].id.uuidString
+            do { settings.apiProfiles[index].apiKey = try keychain.getAPIKey(for: account) }
+            catch KeychainError.itemNotFound { }
+            catch { storageWarning = "有一项密钥暂时无法从钥匙串读取。原密钥没有被删除，请重新打开设置检查。" }
+        }
+        if needsMigration && storageWarning == nil {
+            do {
+                for p in settings.apiProfiles where !p.apiKey.isEmpty { try keychain.saveAPIKey(p.apiKey, for: p.id.uuidString) }
+                defaults.set(try JSONEncoder().encode(settings), forKey: settingsKey)
+            } catch { storageWarning = "旧配置已读取，但迁移尚未保存。请在设置中重新保存；原配置仍然保留。" }
+        }
+    }
+    func save(_ candidate: AppSettings) throws {
+        var value = candidate; value.repairSelection()
+        let encoded = try JSONEncoder().encode(value)
+        var changed: [(UUID, String?)] = []
+        do {
+            for p in value.apiProfiles {
+                let previous = settings.apiProfiles.first { $0.id == p.id }
+                if previous?.apiKey == p.apiKey { continue }
+                if p.apiKey.isEmpty { try keychain.deleteAPIKey(for: p.id.uuidString) }
+                else { try keychain.saveAPIKey(p.apiKey, for: p.id.uuidString) }
+                changed.append((p.id, previous?.apiKey))
             }
-        } else {
-            self.settings = .default
+        } catch {
+            var recoveryFailed = false
+            for (id, previous) in changed.reversed() {
+                do {
+                    if let previous, !previous.isEmpty { try keychain.saveAPIKey(previous, for: id.uuidString) }
+                    else { try keychain.deleteAPIKey(for: id.uuidString) }
+                } catch { recoveryFailed = true }
+            }
+            throw FailureInfo(kind: .storage, title: "配置还没有保存", message: recoveryFailed ? "部分密钥可能已更新，恢复时也遇到了问题。请逐项检查密钥后重新保存。" : "钥匙串没有接受这次修改，现有配置仍然保留。", suggestion: "确认钥匙串可用后再试一次。")
         }
-
-        // Load API key from Keychain
-        if let apiKey = try? keychain.getAPIKey() {
-            self.settings.aiConfig.apiKey = apiKey
-        }
-    }
-
-    // Save settings
-    func saveSettings() {
-        // Save API key to Keychain
-        if !settings.aiConfig.apiKey.isEmpty {
-            try? keychain.saveAPIKey(settings.aiConfig.apiKey)
-        }
-
-        // Save other settings to UserDefaults (without API key)
-        var settingsToSave = settings
-        settingsToSave.aiConfig.apiKey = ""  // Don't save API key to UserDefaults
-
-        if let encoded = try? JSONEncoder().encode(settingsToSave) {
-            defaults.set(encoded, forKey: settingsKey)
+        let removed = settings.apiProfiles.filter { old in !value.apiProfiles.contains(where: { $0.id == old.id }) }
+        defaults.set(encoded, forKey: settingsKey)
+        settings = value; storageWarning = nil
+        for p in removed {
+            do { try keychain.deleteAPIKey(for: p.id.uuidString) }
+            catch { storageWarning = "API 已移除，但钥匙串中的旧密钥未能清理。可以在“钥匙串访问”中移除对应项。" }
         }
     }
-
-    // Update AI config
-    func updateAIConfig(_ config: AIConfig) {
-        settings.aiConfig = config
-        saveSettings()
-    }
-
-    // Update behavior settings
-    func updateBehaviorSettings(autoAdd: Bool? = nil, screenshot: Bool? = nil, text: Bool? = nil) {
-        if let autoAdd = autoAdd {
-            settings.autoAddMode = autoAdd
-        }
-        if let screenshot = screenshot {
-            settings.enableScreenshotCapture = screenshot
-        }
-        if let text = text {
-            settings.enableTextCapture = text
-        }
-        saveSettings()
-    }
-
-    // Validate configuration
-    func validateConfig() -> [String] {
-        var errors: [String] = []
-
-        // Check API base URL
-        if settings.aiConfig.baseURL.isEmpty {
-            errors.append("API 端点不能为空")
-        } else if URL(string: settings.aiConfig.baseURL) == nil {
-            errors.append("API 端点格式无效")
-        }
-
-        // Check API key
-        if settings.aiConfig.apiKey.isEmpty {
-            errors.append("API Key 不能为空")
-        }
-
-        // Check model name
-        if settings.aiConfig.model.isEmpty {
-            errors.append("模型名称不能为空")
-        }
-
-        // Check temperature range
-        if settings.aiConfig.temperature < 0 || settings.aiConfig.temperature > 2 {
-            errors.append("Temperature 必须在 0-2 之间")
-        }
-
-        // Check max tokens
-        if settings.aiConfig.maxTokens < 1 {
-            errors.append("Max Tokens 必须大于 0")
-        }
-
-        return errors
-    }
-
-    // Reset to default settings
-    func resetToDefaults() {
-        settings = .default
-        try? keychain.deleteAPIKey()
-        defaults.removeObject(forKey: settingsKey)
+    func select(api: UUID, model: UUID) throws {
+        var copy = settings; copy.selectedAPIID = api; copy.selectedModelID = model
+        try save(copy)
     }
 }

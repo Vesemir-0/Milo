@@ -1,161 +1,61 @@
-# AI Schedule Assistant
+<p align="center">
+  <img src="docs/images/milo-icon.png" width="112" alt="Milo, the capybara scribe">
+</p>
 
-[中文文档](README_CN.md)
+<h1 align="center">Milo</h1>
 
-【AIScheduleAssistant，一款免费开源的使用AI从截图或文本中识别日程信息的智能macOS菜单栏应用】 https://www.bilibili.com/video/BV1CZPZzYE9g/?share_source=copy_web&vd_source=e7f291854be2ed6de2c8a06ca5facd2a
+<p align="center"><strong>Your capybara schedule scribe.</strong></p>
+<p align="center">Hand Milo a screenshot or message. Review the notes, then save your plans to Calendar and Reminders.</p>
 
-An intelligent macOS menu bar application that uses AI to recognize schedule information from screenshots or selected text, and automatically adds them to your system Calendar and Reminders.
+<p align="center">
+  <a href="https://github.com/Vesemir-0/Milo/releases/latest">Download for Mac</a> ·
+  <a href="README.md">简体中文</a>
+</p>
 
-## Features
+<p align="center">macOS 14.6 or later · Apple Silicon and Intel</p>
 
-- 📸 **Screenshot Recognition**: Capture screenshots and let AI extract schedule information
-- ⌨️ **Text Input**: Manually input or paste text containing schedule information
-- 🤖 **AI-Powered**: Uses OpenAI-compatible APIs for intelligent parsing
-- 📅 **Flexible Saving**: Choose to save to Calendar only, Reminders only, or both
-- 🏷️ **Smart Categorization**: AI matches existing categories or creates new ones
-- ⚙️ **Flexible Configuration**: Support for any OpenAI-compatible API service
-- 🔒 **Privacy First**: All processing happens locally, API keys stored securely in Keychain
-- ⚡ **Auto-Add Mode**: Optional mode to skip preview and add events automatically
+![Milo's review window, with editable notes and individual save destinations](docs/images/milo-review.png)
 
-## Requirements
+*The plans shown are examples.*
 
-- macOS 14.6 or later
-- System permissions:
-  - Screen Recording (for screenshots)
-  - Calendar
-  - Reminders
+## A note before it becomes a plan
 
-## Installation
+Meeting notices, messages and event posters often contain plans worth keeping. Milo lives in your Mac's menu bar and turns the content you submit into paper notes you can review and edit before saving.
 
-1. Download the latest release from [Releases](https://github.com/Vesemir-0/AIScheduleAssistant/releases)
-2. Move the app to your Applications folder
-3. Launch the app - it will appear in your menu bar
-4. Grant necessary permissions when prompted
-5. Configure your AI API settings
+1. **Capture or type.** Select an area of your screen, or paste a message into the menu bar popover.
+2. **Review and edit.** Change titles, notes, dates, locations and save destinations.
+3. **Add your plans.** Save selected items to Apple Calendar, Reminders, or both.
 
-## Configuration
+## What's new in Milo 2.0
 
-### AI API Setup
+| What you need | How Milo helps |
+| --- | --- |
+| Read each plan clearly | Warm paper notes, separate dates and locations, multiline editing, and paging for longer lists. |
+| Make a change before saving | Edit the extracted notes, select or deselect all items across pages, and choose destinations individually. |
+| Keep submitting content | Capture or type again while earlier submissions are being processed. Each result is reviewed separately. |
+| Choose a different model | Save multiple recognition services and models, switch between them, and check a connection before use. |
+| Return to a previous result | Reopen local history without recognizing the same content again. Review processing time and usage when available. |
+| Work with fewer interruptions | Press Esc to cancel a screenshot. When something goes wrong, see a short explanation and a practical next step. |
 
-1. Click the menu bar icon
-2. Select "Settings"
-3. In the "AI Configuration" tab:
-   - **API Endpoint**: Your API base URL (e.g., `https://api.openai.com/v1`)
-   - **API Key**: Your API key
-   - **Model Name**: Model to use (e.g., `gpt-4`, `claude-3-opus`)
-   - **Temperature**: 0-2 (default: 0.7)
-   - **Max Tokens**: Maximum response length (default: 4000)
+## Download and install
 
-### Supported AI Services
+Current version: **Milo 2.0.0**.
 
-Any service with OpenAI-compatible API:
-- OpenAI (GPT-4, GPT-3.5)
-- Anthropic Claude (via compatible endpoints)
-- Azure OpenAI
-- Local models (Ollama, LM Studio)
-- Chinese LLMs (Tongyi Qianwen, Wenxin Yiyan, etc.)
+| Download | Installation |
+| --- | --- |
+| [DMG installer](https://github.com/Vesemir-0/Milo/releases/download/v2.0.0/Milo-v2.0.0-universal.dmg) | Open it and drag Milo into Applications. |
+| [ZIP archive](https://github.com/Vesemir-0/Milo/releases/download/v2.0.0/Milo-v2.0.0-universal.zip) | Extract it and move Milo into Applications. |
 
-## Usage
+After launching, click the capybara in the menu bar. Add your recognition service in Settings, choose a model, and grant the requested screen capture, Calendar and Reminders permissions.
 
-### Screenshot Recognition
+When upgrading from AIScheduleAssistant, quit the older app before installing Milo. Your existing local settings carry over.
 
-1. Click the menu bar icon
-2. Select "Screenshot Capture"
-3. Select the area to capture
-4. AI will analyze and show recognized events
-5. Review and confirm to add to Calendar and/or Reminders
+## Your content
 
-### Text Input
+Recognition sends the text or screenshot you choose to the recognition service you select. History stays on this Mac, with retention and cleanup controls. Original screenshots are not retained by default. Milo has no cloud history sync, and downloads do not include personal connection settings.
 
-1. Click the menu bar icon
-2. Select "Text Input"
-3. Type or paste text containing schedule information
-4. Click "Process" to analyze
-5. Review and confirm to add
+## Feedback and license
 
-### Save Target Options
+Report issues or share ideas in [Issues](https://github.com/Vesemir-0/Milo/issues). Remove personal information and connection credentials from screenshots before posting them.
 
-Configure where events are saved in Settings > Behavior Settings:
-- **Calendar and Reminders**: Save to both (default)
-- **Calendar Only**: Only create calendar events
-- **Reminders Only**: Only create reminder items
-
-### Auto-Add Mode
-
-Enable in Settings > Behavior Settings to skip the preview step and add events automatically.
-
-## How It Works
-
-1. **Content Capture**: Screenshot or text input
-2. **AI Analysis**: Sends to configured AI service with current date/time and existing categories
-3. **Event Parsing**: AI returns structured JSON with:
-   - Event title and description
-   - Start/end dates (ISO 8601 format)
-   - Suggested categories
-   - Priority level
-4. **Smart Saving**: Creates calendar events and/or reminders based on your save target preference
-5. **Smart Categorization**: Matches existing categories or creates new ones following broad category principles
-
-## Privacy & Security
-
-- All data processing happens on your device
-- API keys stored securely in macOS Keychain
-- No user data collected or uploaded
-- Screenshots and text only used temporarily during processing
-- AI requests controlled by you
-
-## Development
-
-### Building from Source
-
-```bash
-git clone https://github.com/Vesemir-0/AIScheduleAssistant.git
-cd AIScheduleAssistant
-open "AIScheduleAssistant.xcodeproj"
-```
-
-### Project Structure
-
-```
-AIScheduleAssistant/
-├── App/                    # App lifecycle
-├── Views/                  # SwiftUI views
-│   ├── MenuBar/           # Menu bar interface
-│   ├── Preview/           # Event preview window
-│   ├── Settings/          # Settings interface
-│   └── Components/        # Reusable components
-├── ViewModels/            # View models
-├── Services/              # Business logic
-│   ├── ContentCaptureService
-│   ├── AIService
-│   ├── EventKitService
-│   ├── ConfigService
-│   ├── PermissionManager
-│   └── Logger
-├── Models/                # Data models
-└── Utils/                 # Utilities
-```
-
-## Contributing
-
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Built with SwiftUI and EventKit
-- AI-powered by OpenAI-compatible APIs
-- Inspired by the need for seamless schedule management
-
-## Support
-
-- 🐛 [Report Issues](https://github.com/Vesemir-0/AIScheduleAssistant/issues)
-- 💡 [Feature Requests](https://github.com/Vesemir-0/AIScheduleAssistant/issues)
-- 📖 [Documentation](https://github.com/Vesemir-0/AIScheduleAssistant/wiki)
-
----
-
-Made with ❤️ for productivity enthusiasts
+Milo continues the AIScheduleAssistant project under the [MIT license](LICENSE).

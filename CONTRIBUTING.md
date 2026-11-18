@@ -1,158 +1,21 @@
-# Contributing to AI Schedule Assistant
+# Contributing to Milo
 
-Thank you for your interest in contributing to AI Schedule Assistant! This document provides guidelines for contributing to the project.
+感谢你帮助 Milo 变得更好。
 
-## How to Contribute
+## 反馈问题
 
-### Reporting Bugs
+请在 [Issues](https://github.com/Vesemir-0/Milo/issues) 中说明：
 
-If you find a bug, please create an issue with:
-- A clear, descriptive title
-- Steps to reproduce the issue
-- Expected behavior
-- Actual behavior
-- macOS version and app version
-- Screenshots if applicable
+- 使用的 Milo 版本与 macOS 版本。
+- 如何复现，以及期望发生什么。
+- 实际看到的结果；必要时附上已遮住个人信息的截图。
 
-### Suggesting Features
+请勿提交密钥、个人服务地址、连接凭据、真实日程或未经处理的请求记录。描述问题所需的示例，请使用虚构内容。
 
-Feature suggestions are welcome! Please create an issue with:
-- A clear description of the feature
-- Use cases and benefits
-- Any implementation ideas you have
+## 提交改进
 
-### Code Contributions
+欢迎提交 Pull Request。请围绕一个清楚的问题展开，说明修改后的行为，并核对受影响的功能。界面改动请附上使用虚构数据的效果图。
 
-1. **Fork the repository**
-2. **Create a feature branch**
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-3. **Make your changes**
-   - Follow the existing code style
-   - Add comments for complex logic
-   - Update documentation if needed
-4. **Test your changes**
-   - Ensure the app builds successfully
-   - Test all affected functionality
-   - Check for memory leaks
-5. **Commit your changes**
-   ```bash
-   git commit -m "Add: brief description of your changes"
-   ```
-6. **Push to your fork**
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-7. **Create a Pull Request**
-   - Provide a clear description of the changes
-   - Reference any related issues
-   - Include screenshots for UI changes
+保持菜单栏入口简洁、核对流程清楚，并尊重用户的本地数据。构建产物、个人配置、过程记录和临时文件不应进入提交。
 
-## Development Setup
-
-### Prerequisites
-- macOS 14.6 or later
-- Xcode 16.0 or later
-- Swift 5.0 or later
-
-### Building the Project
-```bash
-git clone https://github.com/Vesemir-0/AIScheduleAssistant.git
-cd AIScheduleAssistant
-open "AIScheduleAssistant.xcodeproj"
-```
-
-### Project Structure
-```
-AIScheduleAssistant/
-├── App/                    # App lifecycle and delegates
-├── Views/                  # SwiftUI views
-├── ViewModels/            # View models (MVVM)
-├── Services/              # Business logic services
-├── Models/                # Data models
-└── Utils/                 # Utility classes
-```
-
-## Code Style Guidelines
-
-### Swift Style
-- Follow [Swift API Design Guidelines](https://swift.org/documentation/api-design-guidelines/)
-- Use meaningful variable and function names
-- Keep functions focused and concise
-- Add comments for complex logic
-
-### Architecture
-- Follow MVVM pattern
-- Keep views lightweight
-- Business logic belongs in services
-- Use dependency injection where appropriate
-
-### Naming Conventions
-- **Classes/Structs**: PascalCase (e.g., `ContentCaptureService`)
-- **Functions/Variables**: camelCase (e.g., `captureScreenshot`)
-- **Constants**: camelCase (e.g., `maxTokens`)
-- **Enums**: PascalCase with lowercase cases (e.g., `SaveTarget.both`)
-
-## Testing
-
-- Test all new features thoroughly
-- Verify existing functionality still works
-- Test with different AI providers
-- Test permission handling
-- Check memory usage
-
-## Documentation
-
-- Update README.md if adding new features
-- Add inline comments for complex code
-- Update technical documentation in docs/
-- Include usage examples for new features
-
-## Commit Message Guidelines
-
-Use clear, descriptive commit messages:
-- `Add: new feature description`
-- `Fix: bug description`
-- `Update: what was updated`
-- `Refactor: what was refactored`
-- `Docs: documentation changes`
-
-## Pull Request Process
-
-1. Ensure your code builds without warnings
-2. Update documentation as needed
-3. Add yourself to contributors if it's your first PR
-4. Wait for review and address feedback
-5. Once approved, your PR will be merged
-
-## Code of Conduct
-
-### Our Standards
-- Be respectful and inclusive
-- Welcome newcomers
-- Accept constructive criticism
-- Focus on what's best for the community
-- Show empathy towards others
-
-### Unacceptable Behavior
-- Harassment or discriminatory language
-- Trolling or insulting comments
-- Personal or political attacks
-- Publishing others' private information
-- Other unprofessional conduct
-
-## Questions?
-
-Feel free to:
-- Open an issue for questions
-- Start a discussion in GitHub Discussions
-- Reach out to maintainers
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the MIT License.
-
----
-
-Thank you for contributing to AI Schedule Assistant! 🎉
+参与贡献即表示同意按项目的 [MIT 许可](LICENSE) 提供相关改动。

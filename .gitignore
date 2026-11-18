@@ -100,3 +100,19 @@ release/
 build/
 *.dmg
 *.zip
+
+# Local design exploration, personal development state and unpublished notes
+.oil-ui/
+.swiftpm/
+design/
+docs/MILO-MAC-2.0.md
+docs/MACOS-RELEASE.md
+*.log
+.env
+.env.*
+!.env.example
+*.p12
+*.mobileprovision
+*.provisionprofile
+*.key
+*.pem

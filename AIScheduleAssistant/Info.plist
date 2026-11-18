@@ -3,8 +3,18 @@
 <plist version="1.0">
 <dict>
 	<key>NSCalendarsUsageDescription</key>
-	<string>需要访问日历以创建日程事件</string>
+	<string>把确认后的安排保存到系统日历。</string>
 	<key>NSRemindersUsageDescription</key>
-	<string>需要访问提醒事项以创建待办事项</string>
+	<string>把确认后的待办保存到系统提醒事项。</string>
+	<key>CFBundleDisplayName</key>
+	<string>Milo</string>
+	<key>CFBundleName</key>
+	<string>Milo</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Milo 需要访问日历，以便选择保存位置并添加你确认后的安排。</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Milo 需要访问提醒事项，以便添加你确认后的待办与截止提醒。</string>
 </dict>
 </plist>
